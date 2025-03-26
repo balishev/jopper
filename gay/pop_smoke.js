@@ -5,11 +5,26 @@ var GAME = {
     background: '#F5F0E1',
     gameOver: false
 };
+var burgerImage = new Image();
+burgerImage.src = 'aboba.jpg'; // убедитесь, что у вас есть изображение burger.png
+
+var burgers = [];
+var BURGER_SIZE = 50; // размер бургера
+function spawnBurger() {
+    let x = Math.random() * (GAME.width - BURGER_SIZE);
+    let y = Math.random() * (GAME.height - BURGER_SIZE - RACKET.height - 30) + 30; // чтобы не появлялись на ракетке и возле счётчика
+    burgers.push({ x, y, size: BURGER_SIZE });
+}
+
+// создавайте бургер каждые 3 секунды
+setInterval(spawnBurger, 3000);
+var superGrowth = false;  // флаг начала супер роста
+var rotationAngle = 0;    // угол вращения
 
 var racketImage = new Image();
 racketImage.src = 'racket.jpg';
 var ballImage = new Image();
-ballImage.src = 'sticker.webp';
+ballImage.src = 'child.webp';
 
 
 var canvas = document.getElementById('canvas');
@@ -22,7 +37,7 @@ var initialBallState = {
     color: '#FF6E40',
     x: 100,
     y: 80,
-    radius: 70,
+    radius: 20,
     xDirection: 4,
     yDirection: 4,
 };
@@ -82,6 +97,9 @@ function drawBackground() {
 
 // Отрисовка шара
 function drawBall() {
+    if (superGrowth) {
+        canvasContext.rotate(rotationAngle);
+    }
     if (ballImage.complete) {
         canvasContext.save();
         canvasContext.beginPath();
@@ -126,15 +144,64 @@ function drawScore() {
     canvasContext.font = "20px Arial";
     canvasContext.fillText("Отбито: " + score, 10, 30);
 }
+function drawBurgers() {
+    burgers.forEach(burger => {
+        if (burgerImage.complete) {
+            canvasContext.drawImage(burgerImage, burger.x, burger.y, burger.size, burger.size);
+        } else {
+            // пока изображение грузится, можно нарисовать простой квадрат
+            canvasContext.fillStyle = 'green';
+            canvasContext.fillRect(burger.x, burger.y, burger.size, burger.size);
+        }
+    });
+}
 
+function checkBurgerCollision() {
+    burgers = burgers.filter(burger => {
+        let dx = (BALL.x - burger.x - burger.size / 2);
+        let dy = (BALL.y - burger.y - burger.size / 2);
+        let distance = Math.sqrt(dx * dx + dy * dy);
+
+        if (distance < BALL.radius + burger.size / 2) {
+            BALL.radius += 30;
+            console.log(BALL.radius);
+
+            if (BALL.radius > 100 && !superGrowth) {
+                superGrowth = true; // включаем супер рост
+            }
+
+            return false;
+        }
+        return true;
+    });
+}
+function superGrowBall() {
+    if (superGrowth) {
+        BALL.radius += 1.5;  // скорость роста шара
+        rotationAngle += 0.05; // скорость вращения шара
+        BALL.x = GAME.width / 2;  // центрируем по центру экрана
+        BALL.y = GAME.height / 2;
+
+        if (BALL.radius > GAME.width && BALL.radius > GAME.height) {
+            GAME.gameOver = true;
+        }
+    }
+}
 
 // Обновление состояния мяча
 function updateBall() {
+    if (superGrowth) {
+        superGrowBall();
+        return; // выходим, чтобы шар не двигался обычно
+    }
     let prevX = BALL.x;
     let prevY = BALL.y;
 
     BALL.x += BALL.xDirection;
     BALL.y += BALL.yDirection;
+
+    // Проверка на столкновение с бургерами
+    checkBurgerCollision();
 
     if ((BALL.x + BALL.radius > GAME.width) || (BALL.x - BALL.radius < 0)) {
         BALL.xDirection = -BALL.xDirection;
@@ -188,16 +255,23 @@ function updateRacket() {
 
 // Отрисовка сообщения о проигрыше
 function drawGameOver() {
-    canvasContext.fillStyle = "rgba(0, 0, 0, 0.8)";
+    canvasContext.fillStyle = "rgba(0, 0, 0, 0.9)";
     canvasContext.fillRect(0, 0, GAME.width, GAME.height);
 
-    canvasContext.fillStyle = "#FFFFFF";
-    canvasContext.font = "25px Arial";
-    canvasContext.textAlign = "center";
-    canvasContext.fillText("Вы проиграли!", GAME.width / 2, GAME.height / 2 - 20);
-    canvasContext.fillText("Отбито мячей: " + score, GAME.width / 2, GAME.height / 2 + 10);
-    canvasContext.font = "18px Arial";
-    canvasContext.fillText("Нажмите R для рестарта", GAME.width / 2, GAME.height / 2 + 40);
+    if (BALL.radius > GAME.width && BALL.radius > GAME.height) {
+        canvasContext.fillStyle = "red";
+        canvasContext.font = "50px Arial";
+        canvasContext.textAlign = "center";
+        canvasContext.fillText("ОН РОДИЛСЯ!", GAME.width / 2, GAME.height / 2);
+    } else {
+        canvasContext.fillStyle = "#FFFFFF";
+        canvasContext.font = "25px Arial";
+        canvasContext.textAlign = "center";
+        canvasContext.fillText("Вы проиграли!", GAME.width / 2, GAME.height / 2 - 20);
+        canvasContext.fillText("Отбито мячей: " + score, GAME.width / 2, GAME.height / 2 + 10);
+        canvasContext.font = "18px Arial";
+        canvasContext.fillText("Нажмите R для рестарта", GAME.width / 2, GAME.height / 2 + 40);
+    }
 }
 
 // Отрисовка одного кадра игры
@@ -207,6 +281,7 @@ function drawFrame() {
     drawBall();
     drawRacket();
     drawScore();
+    drawBurgers();
 }
 
 // Переменная для состояния паузы
@@ -259,12 +334,16 @@ function drawPause() {
 // При рестарте игры снимайте паузу явно
 function restartGame() {
     GAME.gameOver = false;
-    paused = false; // снимаем паузу
+    paused = false;
+    superGrowth = false;
+    rotationAngle = 0;
     BALL = {...initialBallState};
     RACKET = {...initialRacketState};
+    burgers = []; // очистите бургеры
     score = 0;
     play();
 }
+
 
 // Функция рестарта игры
 function restartGame() {
